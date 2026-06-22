@@ -1,10 +1,10 @@
 #!/bin/bash
-# Novel Video Factory v4 — Kaggle Setup Script
+# Novel Video Factory v5 — Kaggle Setup Script
 # Run once at the start of each Kaggle session
 set -e
 
 echo "=========================================="
-echo " Novel Video Factory v4 — Kaggle Setup"
+echo " Novel Video Factory v5 — Kaggle Setup"
 echo "=========================================="
 
 # 1. System packages
