@@ -52,13 +52,13 @@ class MemoryExtractor:
             '      "accessories": "",\n'
             '      "distinctive_features": [],\n'
             '      "appearance_confidence": 0.0,\n'
-            '      "role": ""\n'
+            '      "role": "",\n      "current_outfit": ""\n'
             "    }\n"
             "  ],\n"
             '  "locations": [\n'
             "    {\n"
             '      "name": "",\n'
-            '      "description": ""\n'
+            '      "description": "",\n      "visual_tags": ""\n'
             "    }\n"
             "  ],\n"
             '  "events": [\n'
@@ -133,7 +133,7 @@ class MemoryExtractor:
             '      "accessories": "",\n'
             '      "distinctive_features": [],\n'
             '      "appearance_confidence": 0.0,\n'
-            '      "role": ""\n'
+            '      "role": "",\n      "current_outfit": ""\n'
             "    }\n"
             "  ]\n"
             "}"
@@ -163,7 +163,7 @@ class MemoryExtractor:
             '  "locations": [\n'
             "    {\n"
             '      "name": "",\n'
-            '      "description": ""\n'
+            '      "description": "",\n      "visual_tags": ""\n'
             "    }\n"
             "  ]\n"
             "}"

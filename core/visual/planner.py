@@ -1,105 +1,135 @@
 """
-Scene Planner — Novel Video Factory v4
-Converts text chunks into structured narrative scenes and cinematic shots.
+Storyboard Planner — Novel Video Factory v5
+Extracts visual narrative beats from text chunks to generate a flat storyboard sequence.
+Maintains continuity state across chunks.
 """
 import json
 import logging
-import re
 from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
-
-class ScenePlanner:
+class StoryboardPlanner:
     """
-    Breaks text chunks into narrative scenes (the 'showrunner' role).
-    Each scene groups related sentences with location/character/mood info.
+    Breaks narrative blocks into cinematic visual beats.
+    Maintains environment state (location, characters, time, weather) across blocks.
     """
     def __init__(self, llm_adapter, config: dict = None):
         self.llm = llm_adapter
         self.config = config or {}
 
-    def plan_scenes(self, text_chunk: str, chapter: int = 1, events: List[Dict] = None) -> List[Dict]:
-        """Convert a text chunk into a list of visual scenes, using events as a skeleton."""
+        self.VALID_BEATS = {
+            "environment", "action", "reaction", "emotion",
+            "dialogue", "object_focus", "reveal", "combat", "transition"
+        }
+        self.VALID_SHOTS = {
+            "establishing_shot", "wide_shot", "medium_shot",
+            "close_up", "extreme_close_up", "over_shoulder"
+        }
+
+    def plan_panels(self, text_chunk: str, current_state: dict, chapter: int = 1, start_sequence: int = 1) -> dict:
+        """
+        Convert a text chunk into a list of visual panels.
+        Returns a dict containing 'state' and 'panels'.
+        """
         system = (
-            "You are a cinematic storyboard director.\n"
-            "Turn the provided source_text into a JSON array of sequential scenes.\n\n"
+            "You are a cinematic storyboard director for a manga/manhwa adaptation.\n"
+            "Turn the provided narrative block into a JSON storyboard.\n\n"
             "RULES:\n"
-            "1. NO SUMMARIZATION: Every sentence must be its own scene. One sentence = one scene.\n"
-            "2. 100% COVERAGE: The 'narration_text' of all scenes combined must equal the source text 100%.\n"
-            "3. USE EVENTS: Use the provided events as mandatory coverage targets. Every event must appear in at least one scene.\n"
-            "4. USE SOURCE TEXT: Use source_text for visual details, dialogue context, emotion, atmosphere, clothing, and scene composition.\n"
-            "5. CAMERA MOTION: Pick the single best fit from this exact list for "
-            "'camera_motion': zoom_in, zoom_out, pan_left, pan_right, static. "
-            "zoom_in for tense/intimate/shocking beats, zoom_out for "
-            "isolation/sadness, pan_left/pan_right for wide establishing or "
-            "traveling shots, static for calm dialogue with little motion.\n"
-            "6. OUTPUT ONLY VALID JSON: Return a JSON object with a 'scenes' array.\n\n"
+            "1. EXTRACT VISUAL BEATS: Do NOT extract sentence-by-sentence. Extract core visual moments (beats).\n"
+            "2. MAINTAIN CONTINUITY: Use the Provided State as the starting point. Update the State based on the text.\n"
+            "3. BEAT TYPES: Must be one of: environment, action, reaction, emotion, dialogue, object_focus, reveal, combat, transition.\n"
+            "4. SHOT TYPES: Must be one of: establishing_shot, wide_shot, medium_shot, close_up, extreme_close_up, over_shoulder.\n"
+            "5. IMPORTANCE: Rate each panel 1-10. 10 = epic/critical, 1 = minor filler.\n"
+            "6. DESCRIPTION: Write a dense, visually descriptive prompt for the panel.\n"
+            "7. NO MARKDOWN: Output ONLY valid JSON.\n\n"
             "JSON SCHEMA:\n"
             "{\n"
-            '  "scenes": [\n'
+            '  "state": {\n'
+            '    "current_location": "",\n'
+            '    "time_of_day": "",\n'
+            '    "weather": "",\n'
+            '    "active_characters": []\n'
+            "  },\n"
+            '  "panels": [\n'
             "    {\n"
-            '      "scene_id": "SC001",\n'
-            '      "location": "Room",\n'
-            '      "characters": ["Xu"],\n'
-            '      "emotion": "neutral",\n'
-            '      "action": "Xu sits.",\n'
-            '      "camera_angle": "medium shot",\n'
-            '      "camera_motion": "static",\n'
-            '      "lighting": "daylight",\n'
-            '      "visual_prompt_tags": "1boy",\n'
-            '      "narration_text": "Xu sits.",\n'
-            '      "complexity": 5\n'
+            '      "beat_type": "environment",\n'
+            '      "shot_type": "wide_shot",\n'
+            '      "importance": 8,\n'
+            '      "location": "Riverbank",\n'
+            '      "focus_character": "Arthur",\n'
+            '      "characters": ["Arthur"],\n'
+            '      "description": "Arthur sits beside the winding river under the glowing sunset."\n'
             "    }\n"
             "  ]\n"
             "}"
         )
 
         payload = {
-            "events": events or [],
-            "source_text": text_chunk[:3000]
+            "provided_state": current_state,
+            "narrative_block": text_chunk
         }
         prompt = json.dumps(payload, indent=2)
 
-        max_t = self.config.get("models", {}).get("llm", {}).get("scene_max_tokens", 2500)
+        max_t = self.config.get("models", {}).get("llm", {}).get("scene_max_tokens", 3500)
         response = self.llm.generate_json(prompt, system_prompt=system, temperature=0.2, max_tokens=max_t)
-        
+
         try:
-            scenes = json.loads(response)
-            if isinstance(scenes, dict) and "scenes" in scenes:
-                scenes = scenes["scenes"]
-            if not isinstance(scenes, list):
-                if isinstance(scenes, dict):
-                    scenes = [scenes]
-                else:
-                    scenes = []
+            data = json.loads(response)
         except Exception as e:
-            logger.warning(f"Scene planner JSON parse failed: {e}")
-            scenes = []
+            logger.warning(f"StoryboardPlanner JSON parse failed: {e}")
+            return {"state": current_state, "panels": []}
 
-        if not scenes:
-            logger.warning("Scene planner returned empty or parse failed. Returning empty list to trigger retry.")
-            return []
+        if not isinstance(data, dict):
+            logger.warning("StoryboardPlanner output is not a dictionary.")
+            return {"state": current_state, "panels": []}
 
-        _VALID_MOTIONS = {"zoom_in", "zoom_out", "pan_left", "pan_right", "static"}
+        state = data.get("state", current_state)
+        panels_raw = data.get("panels", [])
+        
+        if not isinstance(panels_raw, list):
+            logger.warning("StoryboardPlanner 'panels' is not a list.")
+            panels_raw = []
 
-        # Ensure all required fields are present
-        for sc in scenes:
-            sc.setdefault("location", "Unknown")
-            sc.setdefault("characters", [])
-            sc.setdefault("emotion", "neutral")
-            sc.setdefault("action", "continuation")
-            sc.setdefault("camera_angle", "medium shot")
-            sc.setdefault("lighting", "cinematic lighting")
-            sc.setdefault("visual_prompt_tags", "")
-            sc.setdefault("narration_text", "")
-            sc.setdefault("complexity", 5)
-            # If the LLM omits camera_motion or returns something off-list,
-            # leave it unset rather than guessing here — the renderer's
-            # existing emotion/camera_angle heuristic is the fallback for
-            # any scene that doesn't have a valid explicit motion.
-            motion = str(sc.get("camera_motion", "")).strip().lower()
-            sc["camera_motion"] = motion if motion in _VALID_MOTIONS else None
+        valid_panels = []
+        seq = start_sequence
 
-        return scenes
+        for p in panels_raw:
+            try:
+                bt = str(p.get("beat_type", "action")).lower()
+                st = str(p.get("shot_type", "medium_shot")).lower()
+                imp = int(p.get("importance", 5))
+                desc = str(p.get("description", "")).strip()
 
+                if bt not in self.VALID_BEATS:
+                    bt = "action"
+                if st not in self.VALID_SHOTS:
+                    st = "medium_shot"
+                if not (1 <= imp <= 10):
+                    imp = max(1, min(10, imp))
+                
+                if not desc:
+                    continue  # skip empty descriptions
+
+                panel = {
+                    "id": f"p{seq}",
+                    "sequence": seq,
+                    "beat_type": bt,
+                    "shot_type": st,
+                    "importance": imp,
+                    "merge_with_previous": True if imp <= 3 else False,
+                    "location": str(p.get("location", state.get("current_location", ""))),
+                    "focus_character": str(p.get("focus_character", "")),
+                    "characters": p.get("characters", []),
+                    "description": desc,
+                    "chapter": chapter
+                }
+                
+                valid_panels.append(panel)
+                seq += 1
+
+            except Exception as e:
+                logger.warning(f"Failed to validate panel {p}: {e}")
+                continue
+
+        return {"state": state, "panels": valid_panels}

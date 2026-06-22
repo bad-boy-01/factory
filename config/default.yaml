@@ -110,7 +110,6 @@ video:
 # 67 scenes × ~9s/scene ≈ 10 minutes per clip
 storyboard:
   scenes_per_clip: 67
-  words_per_chunk: 500          # Text chunk size for scene planning
 
 # ─── Quality Filter ──────────────────────────────────────────
 quality_filter:

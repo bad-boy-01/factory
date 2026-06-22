@@ -577,16 +577,11 @@ class UnifiedPipeline:
     def stage_visual_planning(self):
         logger.info("─── Stage 4: Visual Planning ───")
         if not getattr(self.planner_llm, "is_available", True):
-            logger.error("❌ Stage 4 Aborted: No LLM provider reachable. Fill missing scenes "
-                         "by re-running this stage once your LLM is back.")
+            logger.error("❌ Stage 4 Aborted: No LLM provider reachable.")
             return
 
-        from core.visual.planner import ScenePlanner
+        from core.visual.planner import StoryboardPlanner
         from core.visual.prompter import PromptGenerator
-        from core.visual.clip_builder import ClipBuilder
-        from core.qa.scene_validator import SceneValidator
-        from core.qa.coverage_validator import CoverageValidator
-        from core.qa.continuity_validator import ContinuityValidator
 
         translated_files = sorted(
             f for f in os.listdir(self.pm.dirs["output"])
@@ -596,38 +591,57 @@ class UnifiedPipeline:
             logger.warning("No translated files — run stage_translate first")
             return
 
-        clips_path = os.path.join(self.pm.dirs["output"], "clips.json")
+        storyboard_path = os.path.join(self.pm.dirs["output"], "storyboard.json")
         
-        all_scenes = []
-        if os.path.exists(clips_path):
+        all_panels = []
+        if os.path.exists(storyboard_path):
             try:
-                with open(clips_path, "r", encoding="utf-8") as f:
-                    existing_clips = json.load(f)
-                for clip in existing_clips:
-                    all_scenes.extend(clip.get("shots", []))
-                logger.info(f"  Loaded {len(existing_clips)} existing clips with {len(all_scenes)} scenes.")
+                import json
+                with open(storyboard_path, "r", encoding="utf-8") as f:
+                    all_panels = json.load(f)
+                logger.info(f"  Loaded {len(all_panels)} existing panels.")
             except Exception as e:
-                logger.error(f"Failed to load clips.json: {e}")
+                logger.error(f"Failed to load storyboard.json: {e}")
 
         current_chapter = 1
-        if all_scenes:
-            max_chapter = max(s.get("chapter", 0) for s in all_scenes)
+        seq = 1
+        if all_panels:
+            max_chapter = max((p.get("chapter", 1) for p in all_panels), default=1)
             current_chapter = max_chapter + 1
-            logger.info(f"  Starting new content from chapter {current_chapter} based on existing clips.")
+            seq = max((p.get("sequence", 0) for p in all_panels), default=0) + 1
 
-        planner = ScenePlanner(self.planner_llm, config=self.config.config)
+        planner = StoryboardPlanner(self.planner_llm, config=self.config.config)
         prompter = PromptGenerator(self.memory_db, config=self.config.config, llm_adapter=self.planner_llm)
-        scene_validator = SceneValidator(config=self.config.config)
-        coverage_validator = CoverageValidator(threshold=0.85)
-        continuity_validator = ContinuityValidator(self.planner_llm, importance_threshold=7)
-        
-        words_per_chunk = 250
-        scenes_per_clip = self.config.get("storyboard.scenes_per_clip", 67)
-        builder = ClipBuilder(scenes_per_clip=scenes_per_clip)
 
-        new_scenes_added = False
-        new_scenes = []
-        failed_chunks = []
+        new_panels_added = False
+        
+        # State object that carries over across chunks
+        planner_state = {
+            "current_location": "unknown",
+            "time_of_day": "unknown",
+            "weather": "unknown",
+            "active_characters": []
+        }
+
+        def create_narrative_blocks(text, min_w=450, max_w=650):
+            paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+            blocks = []
+            current_block = []
+            current_words = 0
+            
+            for p in paragraphs:
+                words = len(p.split())
+                if current_words + words > max_w and current_words >= min_w:
+                    blocks.append("\n\n".join(current_block))
+                    current_block = [p]
+                    current_words = words
+                else:
+                    current_block.append(p)
+                    current_words += words
+                    
+            if current_block:
+                blocks.append("\n\n".join(current_block))
+            return blocks
 
         for filename in translated_files:
             if self.pm.is_complete("visual_planning", sub_key=filename):
@@ -636,414 +650,160 @@ class UnifiedPipeline:
 
             file_path = os.path.join(self.pm.dirs["output"], filename)
             text = self.pm.read_input(file_path)
-            chunks = _chunk_text(text, max_words=words_per_chunk)
+            blocks = create_narrative_blocks(text)
 
-            for i, chunk_data in enumerate(chunks):
-                chunk_text = " ".join(s["text"] for s in chunk_data["sentences"])
+            for i, chunk_text in enumerate(blocks):
                 chunk_key = f"{filename}_{i}"
                 if self.pm.is_complete("visual_planning_chunk", sub_key=chunk_key):
-                    continue  # this specific chunk already succeeded in a previous run
-                    
-                # Retrieve ground truth events for this specific chunk
-                mem_sub_key = f"mem_{filename}_{i}"
-                chunk_events = self.memory_db.get_events_by_chunk(mem_sub_key)
+                    continue
 
-                # Detect chapter for this chunk
-                head = chunk_text[:300]
-                chunk_chapter = current_chapter
-                for pat in [r"chapter\s+(\d+)", r"ch\.?\s*(\d+)\b", r"第\s*(\d+)\s*章",
-                             r"제\s*(\d+)\s*장"]:
-                    m = re.search(pat, head, re.IGNORECASE)
-                    if m:
-                        chunk_chapter = int(m.group(1))
-                        if chunk_chapter >= current_chapter:
-                            current_chapter = chunk_chapter
-                        break
-
-                logger.info(f"  Planning chunk {i+1}/{len(chunks)} from {filename} (~ch{chunk_chapter})")
-                
-                # Proactive delay to avoid Groq Rate Limits
-                import time
-                if getattr(self.planner_llm, "is_cloud", False):
-                    time.sleep(2)
-
-                # V5: Reduce effective chunk size for local model
-                # Overriding for local Qwen model stability
-                effective_words_per_chunk = 250
-                
-                # Re-chunking logic inside the loop if necessary is too complex,
-                # so we just force the re-chunking here.
-                # Actually, simply reducing words_per_chunk at the top level is easier:
-                # (See previous orchestrator change for word_per_chunk)
-                
-                # Scene planning with retries
-                best_scenes = []
-                best_coverage = 0.0
+                logger.info(f"  Planning narrative block {i+1}/{len(blocks)} from {filename} (~ch{current_chapter})")
                 
                 try:
                     import time
-                    start_time = time.time()
-                    for attempt in range(3):
-                        chunk_scenes = planner.plan_scenes(chunk_text, chunk_chapter, events=chunk_events)
-                        if not chunk_scenes:
-                            continue
-                            
-                        # V5: CoverageValidator.validate() returns True if passes, False if fails
-                        is_covered = coverage_validator.validate(chunk_text, chunk_scenes)
-                        
-                        if is_covered:
-                            best_scenes = chunk_scenes
-                            break
-                            
+                    if getattr(self.planner_llm, "is_cloud", False):
                         time.sleep(2)
+                        
+                    result = planner.plan_panels(chunk_text, current_state=planner_state, chapter=current_chapter, start_sequence=seq)
+                    planner_state = result.get("state", planner_state)
+                    panels = result.get("panels", [])
                     
-                    elapsed = time.time() - start_time
-                    prev_avg = self.metrics.get("avg_planning_latency", 0.0)
-                    n = self.metrics.get("chunks_processed", 1) - 1 # Use chunks_processed from earlier
-                    if n < 0: n = 0
-                    self.metrics["avg_planning_latency"] = (prev_avg * n + elapsed) / (n + 1)
-
-                    chunk_scenes = best_scenes
-                    scenes = best_scenes or []
-                    
-                    if not scenes:
-                        self.metrics["chunks_failed"] += 1
-                        self._add_to_retry_queue("visual_planning", chunk_key, "scenes_empty_or_failed")
-                        logger.error(
-                            f"  ⚠️  Chunk {i+1}/{len(chunks)} (~ch{chunk_chapter}, "
-                            f"\"{chunk_text[:60]}…\"): LLM failed to produce valid scenes. "
-                            f"Skipping — will retry on next run."
-                        )
-                        failed_chunks.append({
-                            "file": filename, "chunk_index": i + 1, "chapter": chunk_chapter,
-                            "preview": chunk_text[:120],
-                        })
+                    if not panels:
+                        logger.warning(f"  ⚠️ Block {i+1} yielded 0 panels.")
                         continue
 
-                    best_coverage_ok = coverage_validator.validate(chunk_text, scenes)
+                    # Generate prompts for the panels
+                    for p in panels:
+                        p["chapter"] = current_chapter
+                        prompt_data = prompter.generate_prompt_for_panel(p, chapter_number=current_chapter)
+                        p["prompt"] = prompt_data["prompt"]
+                        p["negative_prompt"] = prompt_data["negative_prompt"]
+                        p["reference_images"] = prompt_data["reference_images"]
+                        p["prompt_cache_key"] = prompt_data.get("cache_key", "")
+                        p["generation_params"] = prompt_data.get("generation_params", {})
+                        
+                    all_panels.extend(panels)
+                    seq += len(panels)
+                    new_panels_added = True
+                    self.pm.save_checkpoint("visual_planning_chunk", "done", sub_key=chunk_key)
+                    logger.info(f"    + {len(panels)} panels (total: {len(all_panels)})")
                 except Exception as e:
-                    self.metrics["chunks_failed"] += 1
-                    self.metrics["llm_failures"] += 1
-                    self._add_to_retry_queue("visual_planning", chunk_key, f"Exception: {str(e)[:50]}")
-                    logger.error(f"  ⚠️  Chunk {i+1}/{len(chunks)} failed with exception: {e}")
-                    failed_chunks.append({
-                        "file": filename, "chunk_index": i + 1, "chapter": chunk_chapter,
-                        "preview": chunk_text[:120],
-                    })
+                    logger.error(f"  ⚠️  Block {i+1} failed: {e}")
                     continue
-                
-                if not best_coverage_ok:
-                    logger.warning(
-                        f"    Chunk {i+1}: using real but under-coverage content "
-                        f"(better than discarding genuine narration)."
-                    )
 
-                for scene in scenes:
-                    scene["chapter"] = chunk_chapter
-                    prompt_data = prompter.generate_prompt_for_scene(
-                        scene, chapter_number=chunk_chapter
-                    )
-                    scene["prompt"] = prompt_data["prompt"]
-                    scene["negative_prompt"] = prompt_data["negative_prompt"]
-                    scene["reference_images"] = prompt_data["reference_images"]
-                    scene["prompt_cache_key"] = prompt_data.get("cache_key", "")
-                    scene["generation_params"] = prompt_data.get("generation_params", {})
-                    scene["image_path"] = None
-                    scene["audio_path"] = None
+            self.pm.save_checkpoint("visual_planning", "done", sub_key=filename)
 
-                all_scenes.extend(scenes)
-                new_scenes.extend(scenes)
-                new_scenes_added = True
-                self.pm.save_checkpoint("visual_planning_chunk", "done", sub_key=chunk_key)
-                logger.info(f"    {len(scenes)} scenes (total: {len(all_scenes)})")
+        if new_panels_added:
+            import json
+            self.pm.save_output("storyboard.json", json.dumps(all_panels, indent=2))
+            self.pm.save_checkpoint("visual_planning", "done")
+            logger.info(f"✅ Visual planning complete: {len(all_panels)} panels")
+        else:
+            logger.info("  No new panels planned.")
 
-            if new_scenes_added:
-                clips = builder.build_clips(all_scenes)
-                self.pm.save_output("clips.json", json.dumps(clips, indent=2))
-
-            file_failures = [fc for fc in failed_chunks if fc["file"] == filename]
-            if file_failures:
-                # Don't mark the file complete — leave the failed chunks' checkpoints
-                # unset so the next run retries exactly those chunks (and only those;
-                # successful chunks are individually checkpointed above and won't
-                # be redone or duplicated).
-                logger.warning(
-                    f"  {filename}: {len(file_failures)}/{len(chunks)} chunk(s) hit the "
-                    f"LLM fallback and were skipped — not marking complete, will retry "
-                    f"those specific chunks next run."
-                )
-            else:
-                self.pm.save_checkpoint("visual_planning", "done", sub_key=filename)
-
-        if not new_scenes_added:
-            logger.info("  No new scenes to plan. Visual planning already complete for all input files.")
-
-        if failed_chunks:
-            report_path = os.path.join(self.pm.dirs["output"], "FALLBACK_SCENES_REPORT.json")
-            with open(report_path, "w", encoding="utf-8") as f:
-                json.dump(failed_chunks, f, indent=2)
-            logger.error(
-                f"⚠️  Visual planning: {len(failed_chunks)} chunk(s) skipped due to LLM "
-                f"fallback — see {report_path}. Re-run this stage once your LLM provider "
-                f"is reachable to fill in the missing scenes."
-            )
-
-        if not new_scenes_added:
-            return
-
-        self.pm.save_checkpoint("visual_planning", "done")
-        logger.info(f"✅ Visual planning: {len(all_scenes)} scenes")
-        if getattr(self.planner_llm, "fallback_count", 0) > 0:
-            logger.warning(
-                f"⚠️  Stage 4 had {self.planner_llm.fallback_count} LLM fallback(s) out of "
-                f"{self.planner_llm.total_calls} calls this run."
-            )
 
     # ── Stage 5: Image Generation ─────────────────────────────────────────────
     def stage_generation(self):
         logger.info("─── Stage 5: Image Generation ───")
-        from core.visual.prompter import PromptGenerator
         
-        clips_path = os.path.join(self.pm.dirs["output"], "clips.json")
-        if not os.path.exists(clips_path):
-            logger.warning("clips.json not found — run stage_visual_planning first")
+        storyboard_path = os.path.join(self.pm.dirs["output"], "storyboard.json")
+        if not os.path.exists(storyboard_path):
+            logger.warning("storyboard.json not found — run stage_visual_planning first")
             return
 
         images_dir = os.path.join(self.pm.dirs["output"], "images")
         os.makedirs(images_dir, exist_ok=True)
 
-        with open(clips_path, "r", encoding="utf-8") as f:
-            clips_data = json.load(f)
+        import json
+        with open(storyboard_path, "r", encoding="utf-8") as f:
+            all_panels = json.load(f)
 
-        total_shots_in_clips = sum(len(c.get("shots", [])) for c in clips_data)
+        panels_to_process = []
         generated_count = 0
 
-        scenes_to_process = []
-        for clip in clips_data:
-            for shot in clip.get("shots", []):
-                sid = shot["scene_id"]
-                output_path = os.path.join(images_dir, f"{sid}.png")
-                p_hash = shot.get("prompt_cache_key", "")
+        for panel in all_panels:
+            pid = panel["id"]
+            # Skip if merged with previous
+            if panel.get("merge_with_previous", False):
+                continue
+                
+            output_path = os.path.join(images_dir, f"{pid}.png")
+            p_hash = panel.get("prompt_cache_key", "")
 
-                if os.path.exists(output_path) and self.pm.get_checkpoint_value("img_cache", sid) == p_hash:
-                    generated_count += 1
-                else:
-                    scenes_to_process.append(shot)
+            if os.path.exists(output_path) and self.pm.get_checkpoint_value("img_cache", pid) == p_hash:
+                generated_count += 1
+            else:
+                panels_to_process.append(panel)
 
-        if not scenes_to_process:
+        if not panels_to_process:
             logger.info("  No new images to generate. Image generation already complete.")
             return
 
-        logger.info(f"  Generating {len(scenes_to_process)} new images (total {total_shots_in_clips} shots)…")
-        prompter = PromptGenerator(self.memory_db, config=self.config.config, llm_adapter=self.planner_llm)
+        logger.info(f"  Generating {len(panels_to_process)} new images…")
 
-        for shot in scenes_to_process:
-            sid = shot["scene_id"]
-            output_path = os.path.join(images_dir, f"{sid}.png")
-            p_hash = shot.get("prompt_cache_key", "")
+        for panel in panels_to_process:
+            pid = panel["id"]
+            output_path = os.path.join(images_dir, f"{pid}.png")
+            p_hash = panel.get("prompt_cache_key", "")
 
             self.image_gen.generate_image(
-                prompt=shot["prompt"],
+                prompt=panel["prompt"],
                 output_path=output_path,
-                negative_prompt=shot.get("negative_prompt", ""),
-                reference_image_paths=shot.get("reference_images", []),
-                generation_params=shot.get("generation_params", {}),
-                seed=shot.get("seed"),
+                negative_prompt=panel.get("negative_prompt", ""),
+                reference_image_paths=panel.get("reference_images", []),
+                generation_params=panel.get("generation_params", {})
             )
-            
-            # Quality check & rewrite retry
-            if not os.path.exists(output_path) or os.path.getsize(output_path) < 10000:
-                logger.warning(f"    Image {sid} failed quality check. Attempting prompt rewrite...")
-                rewritten = prompter.rewrite_prompt(shot["prompt"], shot.get("action", ""))
-                self.image_gen.generate_image(
-                    prompt=rewritten,
-                    output_path=output_path,
-                    negative_prompt=shot.get("negative_prompt", ""),
-                    reference_image_paths=shot.get("reference_images", []),
-                    generation_params=shot.get("generation_params", {}),
-                    seed=(shot.get("seed", 42) + 1),
-                )
 
-            self.pm.save_checkpoint("img_cache", p_hash, sub_key=sid)
+            self.pm.save_checkpoint("img_cache", p_hash, sub_key=pid)
             generated_count += 1
             if generated_count % 10 == 0:
-                logger.info(f"  Progress: {generated_count}/{total_shots_in_clips} images")
+                logger.info(f"  Progress: {generated_count} images")
 
-        logger.info(f"✅ Image generation complete: {generated_count} images")
+        logger.info(f"✅ Image generation complete: {generated_count} total generated")
 
     # ── Stage 6: Audio Generation ─────────────────────────────────────────────
     def stage_audio(self):
         logger.info("─── Stage 6: Audio (TTS) ───")
-        clips_path = os.path.join(self.pm.dirs["output"], "clips.json")
-        if not os.path.exists(clips_path):
-            logger.warning("clips.json not found")
+        
+        storyboard_path = os.path.join(self.pm.dirs["output"], "storyboard.json")
+        if not os.path.exists(storyboard_path):
+            logger.warning("storyboard.json not found — run stage_visual_planning first")
             return
 
         audio_dir = os.path.join(self.pm.dirs["output"], "audio")
         os.makedirs(audio_dir, exist_ok=True)
 
-        with open(clips_path, "r", encoding="utf-8") as f:
-            clips_data = json.load(f)
+        import json
+        with open(storyboard_path, "r", encoding="utf-8") as f:
+            panels = json.load(f)
 
-        use_continuous = self.config.get("models.audio.continuous_synthesis", True)
-        if use_continuous:
-            any_changed = False
-            for clip in clips_data:
-                if self._synthesize_clip_audio_continuous(clip, audio_dir):
-                    any_changed = True
-            if any_changed:
-                with open(clips_path, "w", encoding="utf-8") as f:
-                    json.dump(clips_data, f, indent=2)
-            logger.info("✅ Audio generation complete (continuous narration mode)")
-            return
-
-        # ── Legacy path: one TTS call per scene ─────────────────────────────
-        total_shots_in_clips = sum(len(c.get("shots", [])) for c in clips_data)
         audio_generated_count = 0
-        scenes_to_process_audio = []
+        panels_to_process = []
 
-        for clip in clips_data:
-            for shot in clip.get("shots", []):
-                sid = shot["scene_id"]
-                out_path = os.path.join(audio_dir, f"{sid}.wav")
-                if not os.path.exists(out_path) or os.path.getsize(out_path) < 100:
-                    scenes_to_process_audio.append(shot)
-                else:
-                    audio_generated_count += 1
+        for panel in panels:
+            pid = panel["id"]
+            out_path = os.path.join(audio_dir, f"{pid}.wav")
+            if not os.path.exists(out_path) or os.path.getsize(out_path) < 100:
+                panels_to_process.append(panel)
+            else:
+                audio_generated_count += 1
 
-        if not scenes_to_process_audio:
+        if not panels_to_process:
             logger.info("  No new audio to generate. Audio generation already complete.")
             return
 
-        logger.info(f"  Generating {len(scenes_to_process_audio)} new audio files…")
+        logger.info(f"  Generating {len(panels_to_process)} new audio files…")
 
-        for shot in scenes_to_process_audio:
-            sid = shot["scene_id"]
-            out_path = os.path.join(audio_dir, f"{sid}.wav")
-            narration = shot.get("narration_text", "").strip() or "..."
+        for panel in panels_to_process:
+            pid = panel["id"]
+            out_path = os.path.join(audio_dir, f"{pid}.wav")
+            narration = panel.get("description", "").strip() or "..."
             self.audio_gen.generate_audio(narration, out_path)
             audio_generated_count += 1
             if audio_generated_count % 10 == 0:
-                logger.info(f"  Progress: {audio_generated_count}/{total_shots_in_clips} audio files")
+                logger.info(f"  Progress: {audio_generated_count} audio files")
 
         logger.info(f"✅ Audio generation complete: {audio_generated_count} audio files")
-
-    def _synthesize_clip_audio_continuous(self, clip: dict, audio_dir: str) -> bool:
-        """
-        Generate ONE continuous narration track for an entire clip instead
-        of a separate TTS call per scene. Word-boundary timestamps from
-        that single synthesis pass are mapped back to each scene's
-        narration_text to derive a gapless (audio_start, audio_end) window
-        per scene — natural, continuously-read prosody, with per-scene
-        image timing driven by real narration position instead of being
-        forced to match the duration of its own tiny separate audio clip.
-
-        Falls back to per-scene generate_audio() for this clip (writing
-        legacy per-scene .wav files, no audio_start/audio_end fields) if
-        word-boundary capture isn't available — the renderer supports
-        both representations.
-        """
-        shots = clip.get("shots", [])
-        if not shots:
-            return False
-
-        clip_id = clip["clip_id"]
-        narration_path = os.path.join(audio_dir, f"{clip_id}_narration.wav")
-
-        # Already done and every shot has timing? Skip.
-        if (os.path.exists(narration_path)
-                and all(s.get("audio_start") is not None and s.get("audio_end") is not None
-                        for s in shots)):
-            return False
-
-        texts = [(s.get("narration_text") or "").strip() or "..." for s in shots]
-        combined = " ".join(texts)
-
-        logger.info(f"  Synthesizing continuous narration for {clip_id} "
-                    f"({len(shots)} scenes, {len(combined)} chars)…")
-        words = self.audio_gen.generate_audio_with_timestamps(combined, narration_path)
-
-        if not words:
-            logger.warning(
-                f"  Continuous synthesis unavailable for {clip_id} — "
-                f"falling back to one TTS call per scene for this clip."
-            )
-            for shot in shots:
-                sid = shot["scene_id"]
-                out_path = os.path.join(audio_dir, f"{sid}.wav")
-                if not os.path.exists(out_path) or os.path.getsize(out_path) < 100:
-                    self.audio_gen.generate_audio(shot.get("narration_text", "").strip() or "...", out_path)
-                shot["audio_start"] = None
-                shot["audio_end"] = None
-            clip["narration_audio"] = None
-            return True
-
-        total_duration = words[-1]["end"]
-        try:
-            import subprocess, json as _json
-            probe = subprocess.run(
-                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                 "-of", "json", narration_path],
-                capture_output=True,
-            )
-            if probe.returncode == 0:
-                total_duration = max(total_duration, float(_json.loads(probe.stdout)["format"]["duration"]))
-        except Exception:
-            pass
-
-        windows = self._map_words_to_scene_windows(texts, words, total_duration)
-        for shot, (start, end) in zip(shots, windows):
-            shot["audio_start"] = round(start, 3)
-            shot["audio_end"] = round(end, 3)
-
-        clip["narration_audio"] = os.path.basename(narration_path)
-        return True
-
-    @staticmethod
-    def _map_words_to_scene_windows(texts: List[str], words: List[Dict], total_duration: float) -> List[Tuple[float, float]]:
-        """
-        Map continuous-narration word-boundary timestamps back to a
-        gapless, monotonic (start, end) window per scene. Best-effort: not
-        frame-perfect, but guarantees full coverage of the audio with no
-        gaps or overlaps regardless of how cleanly individual words match,
-        since image display timing (not just captions) depends on this.
-        """
-        n = len(texts)
-        offsets = []
-        cursor = 0
-        for t in texts:
-            start_char = cursor
-            end_char = cursor + len(t)
-            offsets.append((start_char, end_char))
-            cursor = end_char + 1  # +1 for the joining space
-
-        measured = []
-        for start_char, end_char in offsets:
-            matching = [w for w in words if start_char <= w["text_offset"] < end_char]
-            if matching:
-                measured.append((min(w["start"] for w in matching), max(w["end"] for w in matching)))
-            else:
-                measured.append(None)
-
-        boundaries = [0.0] * (n + 1)
-        boundaries[n] = total_duration
-        for i in range(1, n):
-            prev_end = measured[i - 1][1] if measured[i - 1] else None
-            curr_start = measured[i][0] if measured[i] else None
-            if prev_end is not None and curr_start is not None:
-                boundaries[i] = (prev_end + curr_start) / 2
-            elif prev_end is not None:
-                boundaries[i] = prev_end
-            elif curr_start is not None:
-                boundaries[i] = curr_start
-            else:
-                boundaries[i] = boundaries[i - 1]
-
-        for i in range(1, n + 1):
-            if boundaries[i] < boundaries[i - 1]:
-                boundaries[i] = boundaries[i - 1]
-
-        return [(boundaries[i], boundaries[i + 1]) for i in range(n)]
 
     # ── Stage 7: Video Assembly ───────────────────────────────────────────────
     def stage_video(self):
