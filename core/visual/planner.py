@@ -44,8 +44,11 @@ class StoryboardPlanner:
             "   - 'reveal': Sudden interruptions, massive new elements bursting in.\n"
             "   - 'object_focus': INANIMATE objects only (magic rings, weapons, floats). Animals/monsters are 'action' or 'reveal'.\n"
             "   - 'action', 'combat', 'dialogue', 'transition'.\n"
-            "4. FOCUS CHARACTER: Must be null OR a character from the active_characters list. Never use an unknown entity like 'Huge Fish'.\n"
-            "5. IMPORTANCE: Rate each panel 1-10. 10 = epic/critical, 1 = minor filler.\n"
+            "4. FOCUS CHARACTER: Must be null OR a character from the active_characters list. Never use an unknown entity like 'Huge Fish'. If none, output null.\n"
+            "5. IMPORTANCE: Rate each panel 1-10. \n"
+            "   - 9-10: Epic/critical moments, reveals, major combat.\n"
+            "   - 6-8: Core actions, environments.\n"
+            "   - 1-3: Minor reactions, adjusting clothes, internal thoughts/wondering, simple dialogue.\n"
             "6. DESCRIPTION: Write a dense, visually descriptive prompt.\n"
             "7. NO MARKDOWN: Output ONLY valid JSON.\n\n"
             "JSON SCHEMA:\n"
@@ -124,7 +127,7 @@ class StoryboardPlanner:
                     "importance": imp,
                     "merge_with_previous": True if imp <= 2 else False,
                     "location": str(p.get("location", state.get("current_location", ""))),
-                    "focus_character": str(p.get("focus_character", "")),
+                    "focus_character": p.get("focus_character", None) if str(p.get("focus_character", "")).lower() not in ["none", "null", ""] else None,
                     "characters": p.get("characters", []),
                     "description": desc,
                     "chapter": chapter
