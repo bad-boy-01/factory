@@ -38,19 +38,22 @@ class StoryboardPlanner:
             "RULES:\n"
             "1. EXTRACT VISUAL BEATS: Do NOT extract sentence-by-sentence. Combine related actions into a single beat (e.g. fishing, sitting, casting -> 1 action beat). Include internal thoughts as emotion beats.\n"
             "2. MAINTAIN CONTINUITY: Use the Provided State. Update the State based on the text.\n"
-            "3. BEAT TYPES:\n"
+            "3. NO FLASHBACK VISUALS: Internal thoughts and memories must remain in the current scene's location. Do not create new locations or visual scenes for memories. Thoughts are emotional beats within the current location.\n"
+            "4. BEAT TYPES:\n"
             "   - 'environment': Establishing shots, scenery.\n"
             "   - 'emotion': Character thoughts, internal monologue, reactions.\n"
             "   - 'reveal': Sudden interruptions, massive new elements bursting in.\n"
             "   - 'object_focus': INANIMATE objects only (magic rings, weapons, floats). Animals/monsters are 'action' or 'reveal'.\n"
-            "   - 'action', 'combat', 'dialogue', 'transition'.\n"
-            "4. FOCUS CHARACTER: Must be null OR a character from the active_characters list. Never use an unknown entity like 'Huge Fish'. If none, output null.\n"
-            "5. IMPORTANCE: Rate each panel 1-10. \n"
-            "   - 9-10: Epic/critical moments, reveals, major combat.\n"
-            "   - 6-8: Core actions, environments.\n"
-            "   - 1-3: Minor reactions, adjusting clothes, internal thoughts/wondering, simple dialogue.\n"
-            "6. DESCRIPTION: Write a dense, visually descriptive prompt.\n"
-            "7. NO MARKDOWN: Output ONLY valid JSON.\n\n"
+            "   - 'action', 'combat', 'dialogue', 'transition', 'reaction'.\n"
+            "5. FOCUS CHARACTER: Must be null OR a character from the active_characters list. Never use an unknown entity like 'Huge Fish'. If none, output null.\n"
+            "6. IMPORTANCE: Rate each panel 1-10. \n"
+            "   - 9-10: Reveals, combat, plot twists, life-changing moments, major entrances.\n"
+            "   - 7-8: Major actions, key discoveries, strong emotional moments.\n"
+            "   - 5-6: Meaningful actions, location changes, important dialogue.\n"
+            "   - 3-4: Setup actions, small observations, minor suspense.\n"
+            "   - 1-2: Tiny reactions, minor dialogue, small emotional shifts, internal wondering.\n"
+            "7. DESCRIPTION: Write a dense, visually descriptive prompt.\n"
+            "8. NO MARKDOWN: Output ONLY valid JSON.\n\n"
             "JSON SCHEMA:\n"
             "{\n"
             '  "state": {\n'
@@ -125,7 +128,7 @@ class StoryboardPlanner:
                     "beat_type": bt,
                     "shot_type": st,
                     "importance": imp,
-                    "merge_with_previous": True if imp <= 2 else False,
+                    "merge_with_previous": True if (bt in ["emotion", "reaction"] and imp <= 4) or (bt in ["dialogue", "transition"] and imp <= 3) else False,
                     "location": str(p.get("location", state.get("current_location", ""))),
                     "focus_character": p.get("focus_character", None) if str(p.get("focus_character", "")).lower() not in ["none", "null", ""] else None,
                     "characters": p.get("characters", []),
