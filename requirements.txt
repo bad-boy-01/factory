@@ -1,5 +1,5 @@
 # Unified Requirements for Novel Video Factory
-# Optimized for NVF_v4.5 Base
+# Optimized for NVF_v5 Base
 
 # Core
 pyyaml>=6.0

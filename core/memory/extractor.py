@@ -1,5 +1,5 @@
 """
-MemoryExtractor — Novel Video Factory v4
+MemoryExtractor — Novel Video Factory v5
 LLM-based extraction of story entities for the knowledge store.
 """
 import json

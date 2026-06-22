@@ -1,6 +1,6 @@
 
 """
-UnifiedPipeline — Novel Video Factory v4
+UnifiedPipeline — Novel Video Factory v5
 
 Coordinates all pipeline stages:
   1. translate   → convert non-English text to English (smart skip for English)

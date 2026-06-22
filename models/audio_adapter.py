@@ -1,5 +1,5 @@
 """
-Audio Adapter — Novel Video Factory v4
+Audio Adapter — Novel Video Factory v5
 PRIMARY:  edge-tts (Microsoft Edge TTS, FREE, no API key, very natural voices)
 FALLBACK: Silent WAV (keeps pipeline running if TTS fails)
 

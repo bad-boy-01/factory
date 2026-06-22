@@ -1,8 +1,8 @@
-# 🎬 Novel Video Factory v4.5 (NVF)
+# 🎬 Novel Video Factory v5 (NVF)
 
 Convert any novel script into a **Korean manhwa-style video** — 100% FREE, runs on Kaggle T4 GPU.
 
-## New in v4.5
+## New in v5
 
 - 🚀 **Long Prompt Support:** Integrated `Compel` to handle prompts >77 tokens without truncation.
 - 🎭 **Face-Specialized Identity:** Switched to `ip-adapter-plus-face` and raised scale (0.65) for superior character consistency.
@@ -25,7 +25,7 @@ Convert any novel script into a **Korean manhwa-style video** — 100% FREE, run
 1. Upload this project to Kaggle
 2. Add your novel to `projects/novel/input/chapter1.txt`
 3. (Optional) Add `GROQ_API_KEY` to Kaggle Secrets → [console.groq.com](https://console.groq.com) (free, no card)
-4. Run `Kaggle_NVF_v4.ipynb` cell by cell
+4. Run `Kaggle_NVF_v5.ipynb` cell by cell
 
 ## Free Models Used
 
@@ -39,7 +39,7 @@ Convert any novel script into a **Korean manhwa-style video** — 100% FREE, run
 ## Project Structure
 
 ```
-NVF_v4.5/
+NVF_v5/
 ├── config/
 │   └── default.yaml          ← All settings here
 ├── core/
@@ -57,7 +57,7 @@ NVF_v4.5/
 │   └── novel/
 │       └── input/            ← Put your .txt novel files here
 ├── main.py                   ## CLI entry point
-├── Kaggle_NVF_v4.ipynb       ## Kaggle notebook
+├── Kaggle_NVF_v5.ipynb       ## Kaggle notebook
 ├── kaggle_setup.sh           ## One-time setup script
 └── requirements.txt
 ```
@@ -108,7 +108,7 @@ Every stage saves checkpoints. To resume:
 - Jump to the cell for the stage where you left off
 - Already-completed work is automatically skipped
 
-## Bug Fixes vs v4
+## Bug Fixes vs v5
 
 - ✅ **CLIP Truncation:** Compel integration ensures "korean manhwa style" tags are never dropped.
 - ✅ **Hallucination Prevention:** Mock LLM responses are rejected in Stage 2/4.
@@ -122,7 +122,7 @@ Every stage saves checkpoints. To resume:
 Each character gets 6 reference pose images (front, smile, angry, crying, fight, sit).
 These are fed to IP-Adapter which "locks in" the character's appearance across all scenes.
 
-v4.5 uses `ip-adapter-plus-face_sdxl_vit-h.bin` at scale `0.65` for optimal identity retention.
+v5 uses `ip-adapter-plus-face_sdxl_vit-h.bin` at scale `0.65` for optimal identity retention.
 
 ## 2-Hour Video Strategy
 
@@ -132,8 +132,8 @@ v4.5 uses `ip-adapter-plus-face_sdxl_vit-h.bin` at scale `0.65` for optimal iden
 - No quality loss — FFmpeg stream-copies (no re-encode)
 
 Current run commands - 
-!git clone https://github.com/bad-boy-01/NFV_v4.5-master.git
-!cd NFV_v4.5-master && bash kaggle_setup.sh
+!git clone https://github.com/bad-boy-01/NFV_v5-master.git
+!cd NFV_v5-master && bash kaggle_setup.sh
 import subprocess
 import time
 import os
@@ -151,5 +151,5 @@ print("Pulling qwen2.5:7b model (this may take a minute if not cached)...")
 # Run the pull command synchronously so we wait for it to finish
 os.system("ollama pull qwen2.5:7b")
 print("Ollama is ready!")
-%cd NFV_v4.5-master
+%cd NFV_v5-master
 !python main.py novel --input projects/novel/input/chapter1.txt

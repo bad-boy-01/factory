@@ -1,5 +1,5 @@
 """
-Novel Video Factory v4 — Main Entry Point
+Novel Video Factory v5 — Main Entry Point
 
 Usage:
   python main.py <project_name> [--stage all|translate|memory|char_sheets|visual|generation|audio|video|export]
@@ -20,7 +20,7 @@ logger = logging.getLogger("NVF")
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Novel Video Factory v4 — Korean Manhwa Video from Novel Scripts"
+        description="Novel Video Factory v5 — Korean Manhwa Video from Novel Scripts"
     )
     parser.add_argument("project", help="Project name (must match folder in projects/)")
     parser.add_argument(

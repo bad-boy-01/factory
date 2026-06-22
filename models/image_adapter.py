@@ -1,5 +1,5 @@
 """
-Image Adapter — Novel Video Factory v4
+Image Adapter — Novel Video Factory v5
 Model: cagliostrolab/animagine-xl-3.1 (FREE on HuggingFace, no API key)
 
 This is the BEST free model for Korean manhwa / webtoon style.

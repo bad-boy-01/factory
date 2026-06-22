@@ -1,5 +1,5 @@
 """
-ClipBuilder — Novel Video Factory v4
+ClipBuilder — Novel Video Factory v5
 Groups scenes into ~10-minute clips for Kaggle's session time limit.
 """
 import logging

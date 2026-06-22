@@ -1,5 +1,5 @@
 """
-Memory Database — Novel Video Factory v4
+Memory Database — Novel Video Factory v5
 SQLAlchemy-backed knowledge store for story entities.
 
 Tables:

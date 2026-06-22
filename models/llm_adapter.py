@@ -1,6 +1,6 @@
 
 """
-LLM Adapter — Novel Video Factory v4
+LLM Adapter — Novel Video Factory v5
 PRIMARY:  Groq free-tier (llama-3.3-70b) — sign up FREE at console.groq.com
 FALLBACK: Ollama local (qwen2.5:7b)      — fully offline, no internet needed
 

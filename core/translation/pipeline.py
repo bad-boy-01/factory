@@ -1,5 +1,5 @@
 """
-Translation Pipeline — Novel Video Factory v4
+Translation Pipeline — Novel Video Factory v5
 
 Smart language detection:
 1. Fast heuristic: if >85% ASCII characters → likely English → SKIP
