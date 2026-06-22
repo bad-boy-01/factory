@@ -1,43 +1,38 @@
-# Novel Video Factory v4 — Part 2 Friendly Workflow
+# Novel Video Factory v5 — Beat-Based Storyboard Architecture
 
-The Novel Video Factory has been enhanced to support a seamless, incremental workflow designed for multi-part projects. This update ensures that you can continue your story weeks or months later by simply adding new script files to your existing project structure. The system will automatically detect new content, preserve your established characters and world style, and generate only the necessary new assets to complete the next part of your video.
+Welcome to Novel Video Factory v5! The entire visual planning architecture has been overhauled from a word-count-based chunking system into a **Beat-Based Storyboard Architecture**. This massive upgrade forces the LLM to think like a manga or manhwa artist, resulting in highly cohesive storytelling, significantly reduced GPU rendering costs, and strictly enforced character continuity.
 
-### Using the Incremental Workflow
+## The V5 Architecture Pipeline
 
-To begin working on a subsequent part of your novel, first ensure you have a backup of your entire project folder. Place your new script, such as `novel_name_part_2.txt`, into the `projects/<your_project_name>/input/` directory. You can then initiate the pipeline using the standard command: `python main.py <your_project_name>`. Alternatively, you may explicitly import the new script by providing the file path: `python main.py <your_project_name> --input path/to/novel_name_part_2.txt`. The pipeline is now intelligent enough to skip previously completed stages and focus solely on the newly added material.
+The pipeline now executes sequentially to create a seamless storyboard video:
+1. **Novel Text Extraction**: The raw text is translated and split into narrative blocks (800-1200 words).
+2. **Memory Engine Extraction**: Automatically tracks and stores character `visual_dna`, `current_outfit`, and location metadata to the SQLite database.
+3. **Storyboard Planning**: The `StoryboardPlanner` loops over narrative blocks and extracts *visual beats* (e.g., action, reaction, emotion, object_focus) rather than isolating sentence-by-sentence frames.
+4. **Prompt Assembly**: The pipeline injects granular character DNA and outfit states directly into Animagine XL / Stable Diffusion prompts.
+5. **Asset Generation**: High-importance beats (score 8-10) receive premium GPU budgets (40 steps, high CFG). Low-importance beats (score <= 2) trigger a new `merge_with_previous` flag.
+6. **Video Rendering**: `VideoRenderer` consumes the `storyboard.json` directly. Panels marked with `merge_with_previous` reuse the previous image asset, chaining camera movements (Ken Burns effects) and subtitles without burning GPU cycles on redundant image generation.
 
-### Core Enhancements and Consistency
+## Using the Incremental Workflow
 
-The updated architecture prioritizes consistency and efficiency across all stages of production. By leveraging the existing `novel_memory.db` and previously generated character sheets, the system ensures that Arthur, Merlin, and all other characters maintain their visual identity throughout the entire series. Similarly, the world style extracted during the initial run is preserved in `world_style.txt`, ensuring that the artistic atmosphere remains uniform.
+To begin working on a subsequent part of your novel, simply place your new script, such as `novel_name_part_2.txt`, into the `projects/<your_project_name>/input/` directory. You can initiate the pipeline using the standard command: 
+```bash
+python main.py <your_project_name>
+```
+The pipeline intelligently skips previously completed stages and focuses solely on generating the missing beats, seamlessly extending the `storyboard.json` and appending the final video.
 
-| Stage | Incremental Behavior |
+## Core V5 Enhancements
+
+| Stage | V5 Behavior |
 | :--- | :--- |
-| **Translation** | Automatically skips files that have already been translated. |
-| **Memory Extraction** | Processes only new text chunks to identify new entities while retaining existing knowledge. |
-| **Visual Planning** | Loads the master `clips.json` and appends new scenes for subsequent chapters. |
-| **Asset Generation** | Generates images and audio only for scenes that do not already have cached files. |
-| **Video Rendering** | Uses content hashing to detect changes, re-rendering only the clips that have been updated. |
+| **Visual Planning** | The planner operates strictly on a `storyboard.json` schema, passing a `state` object (weather, time, location, character outfits) between blocks to eliminate continuity drift. |
+| **Asset Generation** | Utilizes dynamic generation budgets based on LLM-assigned `importance` scores. |
+| **Video Rendering** | Applies custom Ken Burns panning and zooming directly correlated to the `beat_type` (e.g. `reveal` triggers a slow zoom out) and `shot_type` (e.g. `close_up` triggers slower panning). |
 
-### Bug Fixes and Stability
+## Essential Backup Checklist
 
-Several critical issues have been addressed to improve the reliability of the factory. A major bug in the video renderer was resolved where the system incorrectly searched for `shot_id` instead of the standard `scene_id`. Additionally, logic within the `ClipBuilder` and `ScenePlanner` was refactored to provide stable, non-shifting scene IDs. This ensures that adding a "Part 2" will not disrupt the numbering or organization of "Part 1," making the project truly future-proof.
+To ensure you can successfully resume your project at any time, please verify that your backup includes the following essential components:
 
-### Essential Backup Checklist
-
-To ensure you can successfully resume your project at any time, please verify that your backup includes the following essential components.
-
-*   **Memory Directory**: Contains the SQLite database and character reference sheets.
+*   **Memory Directory**: Contains the SQLite database (`novel_memory.db`) and character reference sheets.
 *   **Checkpoints File**: Tracks the completion status of every file and stage.
-*   **Clips Master Plan**: The `clips.json` file in the output directory, which serves as the blueprint for the entire video.
+*   **Storyboard File**: The `storyboard.json` file in the output directory, which serves as the blueprint for the entire video.
 *   **Asset Folders**: The `images` and `audio` directories containing all generated media.
-import os
-from kaggle_secrets import UserSecretsClient
-
-user_secrets = UserSecretsClient()
-secret_value_0 = user_secrets.get_secret("GROQ_API_KEY")
-
-os.environ["GROQ_API_KEY"] = secret_value_0
-print("✓ GROQ_API_KEY added to environment!")
-!git clone https://github.com/bad-boy-01/NFV_v4.5-master.git
-%cd NFV_v4.5-master
-!python start_pipeline.py --input projects/novel/input/chapter1.txt"# factory" 
