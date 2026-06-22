@@ -1,0 +1,171 @@
+# ════════════════════════════════════════════════════════════
+# Novel Video Factory v4 — Default Configuration
+# 100% FREE: No API keys, no paid models
+# ════════════════════════════════════════════════════════════
+
+project:
+  language:
+    source: "auto"     # "auto" = detect language, or set "Korean" / "Chinese" / "English"
+    target: "English"
+  generate_all_character_sheets: false
+  min_character_importance: 7
+
+# ─── Models ──────────────────────────────────────────────────
+models:
+  llm:
+    # Primary: Groq local (qwen2.5:7b) - recommended to avoid Groq rate limits
+    # Fallback: Groq free-tier (sign up FREE at console.groq.com)
+    extractor_provider: "ollama"       # "gemini" | "ollama" | "groq" | "deepseek"
+    extractor_allow_fallback: false
+    planner_provider: "ollama"
+    planner_allow_fallback: true
+    translation_provider: "groq"
+    
+    model: "llama-3.1-8b-instant"   # Groq free model
+    planning_model: "llama-3.3-70b-versatile"
+    translation_model: "llama-3.1-8b-instant"
+    deepseek_model: "deepseek-chat"
+    ollama_host: "http://localhost:11434"
+    ollama_model: "qwen2.5:7b"   # Use 7b/8b for extraction to save VRAM
+    character_max_tokens: 1200
+    location_max_tokens: 800
+    event_max_tokens: 2000
+    scene_max_tokens: 2500
+
+  # ── Image Generation ──────────────────────────────────────
+  image:
+    # Animagine-XL 3.1: FREE on HuggingFace, best manhwa/webtoon model
+    provider: "sdxl"
+    model: "cagliostrolab/animagine-xl-3.1"
+    # Portrait, close to 3:4, and a real SDXL bucket resolution (not just
+    # any multiple of 8 — staying near a trained bucket gives noticeably
+    # better composition/anatomy than an arbitrary aspect ratio would).
+    # Same total pixel count as the old "1344x768 high quality" option
+    # (~1.03M px either way), so this is not a slower setting than what
+    # was already budgeted for — it's just shaped for portrait/3:4 output
+    # instead of 16:9, with zero compositing margin needed at that ratio.
+    width: 896
+    height: 1152      # T4 GPU: ≈ 20-28s/img depending on steps below
+    num_inference_steps: 28   # was 20 — diminishing returns past ~28-30
+    guidance_scale: 7.0
+    use_fast_scheduler: true    # DPM++ 2M Karras (30% faster than DDIM)
+    
+    # ── Identity Preservation ────────────────────────────────
+    # Method: "pulid" (BEST for facial identity) or "ip-adapter"
+    identity_method: "pulid" 
+    use_ip_adapter: true        # Fallback if pulid is disabled
+    ip_adapter_weight_name: "ip-adapter-plus-face_sdxl_vit-h.bin"
+    ip_adapter_scale: 0.65
+    pulid_scale: 0.8            # Strength of PuLID identity (0.0 - 1.0)
+
+  # ── Audio ─────────────────────────────────────────────────
+  audio:
+    provider: "edge_tts"        # FREE Microsoft Edge TTS
+    voice: "en-US-AndrewNeural" # Natural English male voice
+    # Other good voices: en-US-JennyNeural, en-GB-RyanNeural
+    # One continuous TTS synthesis per clip instead of one per scene —
+    # natural prosody/pacing, and per-scene image timing is derived from
+    # real word-boundary timestamps instead of forcing 1 image = 1 audio
+    # clip. edge-tts has a practical per-request text length limit, so
+    # very long clips are still split — this just controls the threshold.
+    continuous_synthesis: true
+    max_chars_per_tts_call: 8000
+
+# ─── Hardware ─────────────────────────────────────────────────
+hardware:
+  device: "cuda"
+  precision: "fp16"
+
+# ─── Video ────────────────────────────────────────────────────
+video:
+  fps: 24
+  font: "DejaVu-Sans-Bold"      # Available on Kaggle/Linux, no ImageMagick policy issues
+  font_size: 40
+  crossfade_duration: 0.5
+  output_format: "mp4"
+  ken_burns_speed: 0.03         # Subtle zoom for cinematic feel
+
+  # ── Presentation style ───────────────────────────────────
+  # "blurred_background": panel centered on a blurred/zoomed copy of
+  #   itself filling the rest of the canvas — no black bars.
+  # "bordered_panel": panel centered on a solid-color canvas with a thin
+  #   border, classic comic-panel-on-a-page look.
+  presentation_style: "blurred_background"
+  output_aspect_ratio: "3:4"    # "3:4" | "16:9" | "1:1"
+  # Export resolution for the LONG edge of output_aspect_ratio. The other
+  # edge is derived from this to match the chosen ratio exactly.
+  output_long_edge: 1440
+
+  # Only used when presentation_style == "blurred_background"
+  blur_radius: 40
+  blur_brightness: 0.55         # 1.0 = no change, <1.0 darkens the backdrop
+                                 # so the sharp foreground panel pops more
+
+  # Only used when presentation_style == "bordered_panel"
+  border_color: [245, 245, 240]  # cream/white
+  border_thickness: 3            # thin black inner line around the panel, px
+
+# ─── Storyboard / Clip Architecture ──────────────────────────
+# Target: 10-minute clips → combine into 2-hour video
+# 67 scenes × ~9s/scene ≈ 10 minutes per clip
+storyboard:
+  scenes_per_clip: 67
+  words_per_chunk: 500          # Text chunk size for scene planning
+
+# ─── Quality Filter ──────────────────────────────────────────
+quality_filter:
+  enabled: true
+  max_retries: 3
+  min_file_size_kb: 10
+  # Smart Identity Check (requires identity_method to be active)
+  # Compares generated face against reference images.
+  identity_check_enabled: true
+  identity_threshold: 0.70      # Similarity score (0.0 to 1.0)
+
+# ─── Character Sheets ────────────────────────────────────────
+character_sheet:
+  enabled: true
+  poses:
+    - "front"
+    # Additional poses (smile, angry, crying, fight, sit) can be enabled
+    # but generate 1 image per character saves massive GPU time on Kaggle.
+
+# ─── Prompts — Manhwa Style ──────────────────────────────────
+prompts:
+  # NOTE: do NOT repeat score_9/score_8_up/masterpiece/best-quality tags
+  # here — ANIMAGINE_QUALITY already adds those at the very front of every
+  # prompt. Duplicating them here used to waste ~15 of the 77-token CLIP
+  # budget on repeats before a single style or character tag was added,
+  # which combined with this block being appended *last* in the prompt
+  # meant the actual "korean manhwa style" tags below were usually the
+  # first thing silently truncated. (prompter.py also dedupes defensively
+  # now regardless of what's configured here, but keep this list clean.)
+  style_positive: >
+    manhwa, webtoon, korean manhwa style, (sharp lineart:1.2),
+    (vibrant colors:1.1), cinematic lighting, dramatic lighting,
+    detailed background, detailed clothing, expressive face
+  style_negative: >
+    score_6, score_5, score_4,
+    (worst quality, low quality:1.4), bad anatomy, bad hands,
+    text, error, missing fingers, extra digit, fewer digits,
+    cropped, jpeg artifacts, signature, watermark, username,
+    blurry, ugly, deformed, 3d render, photo, photorealistic,
+    western comic style, american comic, fat, obese, extra limbs,
+    retro, 90s anime, flat color, thick lines
+
+# ─── System ──────────────────────────────────────────────────
+system:
+  cache_enabled: true
+  # true = raise LLMFallbackExhausted when both Groq and Ollama fail for a
+  #   call (stops the pipeline loudly instead of inserting placeholder
+  #   content — recommended once you've confirmed your LLM setup works).
+  # false = use mock fallbacks, but skip merging them into real data and
+  #   report them clearly (see FALLBACK_SCENES_REPORT.json after Stage 4
+  #   and the "LLM FALLBACK #n" error logs). This is now actually wired up
+  #   — it previously had no effect regardless of its value.
+  strict_mode: false
+
+# ─── Google Drive (Optional) ─────────────────────────────────
+gdrive:
+  enabled: false
+  folder_id: ""                 # Paste your Google Drive folder ID here

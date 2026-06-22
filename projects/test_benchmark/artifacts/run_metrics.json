@@ -1,0 +1,11 @@
+{
+  "chunks_processed": 0,
+  "chunks_failed": 2,
+  "character_success": 0,
+  "location_success": 0,
+  "event_success": 0,
+  "groq_429_count": 0,
+  "llm_failures": 1,
+  "avg_latency": 0,
+  "avg_tokens": 0
+}

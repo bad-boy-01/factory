@@ -1,0 +1,15 @@
+# Generated files
+projects/*/output/
+projects/*/memory/
+projects/*/cache/
+projects/*/storyboard/
+projects/*/checkpoints.json
+projects/*/export/
+__pycache__/
+*.pyc
+*.db
+*.log
+.env
+
+*.md
+!README.md
