@@ -107,9 +107,11 @@ video:
 
 # ─── Storyboard / Clip Architecture ──────────────────────────
 # Target: 10-minute clips → combine into 2-hour video
-# 67 scenes × ~9s/scene ≈ 10 minutes per clip
 storyboard:
   scenes_per_clip: 67
+  target_images_per_1000_words: 7
+  min_images_per_1000_words: 5
+  max_images_per_1000_words: 9
 
 # ─── Quality Filter ──────────────────────────────────────────
 quality_filter:

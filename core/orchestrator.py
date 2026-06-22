@@ -623,7 +623,7 @@ class UnifiedPipeline:
             "active_characters": []
         }
 
-        def create_narrative_blocks(text, min_w=450, max_w=650):
+        def create_narrative_blocks(text, min_w=800, max_w=1200):
             paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
             blocks = []
             current_block = []
@@ -671,6 +671,47 @@ class UnifiedPipeline:
                     if not panels:
                         logger.warning(f"  ⚠️ Block {i+1} yielded 0 panels.")
                         continue
+
+                    # IMAGE BUDGET ENFORCEMENT
+                    target_images = self.config.config.get("storyboard", {}).get("target_images_per_1000_words", 7)
+                    chunk_words = len(chunk_text.split())
+                    budget = max(1, round((chunk_words / 1000) * target_images))
+                    
+                    unmerged_panels = [p for p in panels if not p.get("merge_with_previous", False)]
+                    
+                    if len(unmerged_panels) > budget:
+                        beat_weight = {
+                            "reveal": 5, "combat": 4, "action": 3, "emotion": 2, 
+                            "dialogue": 1, "reaction": 1, "object_focus": 2, 
+                            "environment": 2, "transition": 0
+                        }
+                        
+                        scored_panels = []
+                        for p in unmerged_panels:
+                            bt = p.get("beat_type", "action")
+                            imp = p.get("importance", 5)
+                            effective_score = imp + beat_weight.get(bt, 1)
+                            
+                            is_protected = (bt in ["reveal", "combat"]) or (imp >= 9)
+                            
+                            scored_panels.append({
+                                "panel": p,
+                                "score": effective_score,
+                                "protected": is_protected
+                            })
+                            
+                        scored_panels.sort(key=lambda x: x["score"])
+                        
+                        over_budget_by = len(unmerged_panels) - budget
+                        merged_count = 0
+                        
+                        for sp in scored_panels:
+                            if merged_count >= over_budget_by:
+                                break
+                            if not sp["protected"]:
+                                sp["panel"]["merge_with_previous"] = True
+                                merged_count += 1
+                                logger.info(f"    - Over budget: Merging {sp['panel']['id']} ({sp['panel']['beat_type']}, score {sp['score']})")
 
                     # Generate prompts for the panels
                     for p in panels:

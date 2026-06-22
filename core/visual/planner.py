@@ -36,12 +36,17 @@ class StoryboardPlanner:
             "You are a cinematic storyboard director for a manga/manhwa adaptation.\n"
             "Turn the provided narrative block into a JSON storyboard.\n\n"
             "RULES:\n"
-            "1. EXTRACT VISUAL BEATS: Do NOT extract sentence-by-sentence. Extract core visual moments (beats).\n"
-            "2. MAINTAIN CONTINUITY: Use the Provided State as the starting point. Update the State based on the text.\n"
-            "3. BEAT TYPES: Must be one of: environment, action, reaction, emotion, dialogue, object_focus, reveal, combat, transition.\n"
-            "4. SHOT TYPES: Must be one of: establishing_shot, wide_shot, medium_shot, close_up, extreme_close_up, over_shoulder.\n"
+            "1. EXTRACT VISUAL BEATS: Do NOT extract sentence-by-sentence. Combine related actions into a single beat (e.g. fishing, sitting, casting -> 1 action beat). Include internal thoughts as emotion beats.\n"
+            "2. MAINTAIN CONTINUITY: Use the Provided State. Update the State based on the text.\n"
+            "3. BEAT TYPES:\n"
+            "   - 'environment': Establishing shots, scenery.\n"
+            "   - 'emotion': Character thoughts, internal monologue, reactions.\n"
+            "   - 'reveal': Sudden interruptions, massive new elements bursting in.\n"
+            "   - 'object_focus': INANIMATE objects only (magic rings, weapons, floats). Animals/monsters are 'action' or 'reveal'.\n"
+            "   - 'action', 'combat', 'dialogue', 'transition'.\n"
+            "4. FOCUS CHARACTER: Must be null OR a character from the active_characters list. Never use an unknown entity like 'Huge Fish'.\n"
             "5. IMPORTANCE: Rate each panel 1-10. 10 = epic/critical, 1 = minor filler.\n"
-            "6. DESCRIPTION: Write a dense, visually descriptive prompt for the panel.\n"
+            "6. DESCRIPTION: Write a dense, visually descriptive prompt.\n"
             "7. NO MARKDOWN: Output ONLY valid JSON.\n\n"
             "JSON SCHEMA:\n"
             "{\n"
@@ -117,7 +122,7 @@ class StoryboardPlanner:
                     "beat_type": bt,
                     "shot_type": st,
                     "importance": imp,
-                    "merge_with_previous": True if imp <= 3 else False,
+                    "merge_with_previous": True if imp <= 2 else False,
                     "location": str(p.get("location", state.get("current_location", ""))),
                     "focus_character": str(p.get("focus_character", "")),
                     "characters": p.get("characters", []),
