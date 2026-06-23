@@ -68,10 +68,16 @@ class StoryboardPlanner:
             "A reveal must be visually observable. Valid: monster appears, hidden treasure found. Invalid: realizing something, learning information, discovering a fact mentally.\n\n"
             "OBJECT FOCUS RULE\n"
             "Object focus is reserved for important inanimate objects (sword, treasure, letter). Not valid: people, monsters, animals, facial expressions.\n\n"
+            "VISUAL STATE UNIQUENESS RULE\n"
+            "If two panels can be illustrated using the exact same image asset, they MUST collapse into a single panel. (e.g. 'Family surrounds bed' happens once. All subsequent dialogue/reactions reuse it).\n\n"
+            "DUPLICATE ENVIRONMENT RULE\n"
+            "Environment panels are only allowed when entering a new location, major environmental transformation, or major camera re-establishment. Environment may NOT be used for family reactions, dialogue, narration, reflection, memory recall, or exposition. Environment normally ONCE per location.\n\n"
+            "MEMORY RULE\n"
+            "A character remembering something does not create visual information. Never generate: 'Character remembers...', 'Character realizes...', 'Character recalls...', 'Character understands...'. These are narration events. They should be merged into the currently visible image.\n\n"
             "VISUAL DESCRIPTION RULE\n"
-            "Descriptions must only describe what can be seen by a camera.\n"
-            "Do not describe: memories, thoughts, realizations, understanding, exposition, narration.\n"
-            "Describe only visible subjects, actions, expressions, environments, and objects.\n\n"
+            "Descriptions must contain only things a camera can see.\n"
+            "Forbidden: memories, realizations, understanding, internal thoughts, exposition.\n"
+            "Allowed: faces, expressions, movement, posture, objects, environment, visible actions.\n\n"
             "IMAGE ECONOMY RULE\n"
             "One image should represent as much narrative as possible. (e.g. Character wakes up + family gathered + confusion = ONE image).\n\n"
             "FINAL QUESTION\n"
@@ -205,26 +211,30 @@ class StoryboardPlanner:
                 continue
 
         # Post-processing pass: merge consecutive panels with same location and characters
-        for i in range(1, len(valid_panels)):
-            prev = valid_panels[i-1]
-            curr = valid_panels[i]
-            
-            if curr["merge_with_previous"]:
-                continue
+        if valid_panels:
+            last_unmerged_idx = 0
+            for i in range(1, len(valid_panels)):
+                curr = valid_panels[i]
+                if curr["merge_with_previous"]:
+                    continue
+                    
+                prev = valid_panels[last_unmerged_idx]
                 
-            same_loc = (curr["location"] == prev["location"])
-            
-            curr_chars = set(curr.get("characters", []))
-            prev_chars = set(prev.get("characters", []))
-            if curr_chars and prev_chars:
-                overlap = len(curr_chars.intersection(prev_chars)) / max(len(curr_chars), len(prev_chars))
-                same_chars = overlap >= 0.5 or curr_chars.issubset(prev_chars) or prev_chars.issubset(curr_chars)
-            else:
-                same_chars = (curr_chars == prev_chars)
-            
-            is_env_change = curr["beat_type"] in ["reveal", "combat", "environment"] or (curr["beat_type"] == "action" and curr["importance"] >= 8)
-            
-            if same_loc and same_chars and not is_env_change:
-                curr["merge_with_previous"] = True
+                same_loc = (curr["location"] == prev["location"])
+                
+                curr_chars = set(curr.get("characters", []))
+                prev_chars = set(prev.get("characters", []))
+                if curr_chars and prev_chars:
+                    overlap = len(curr_chars.intersection(prev_chars)) / max(len(curr_chars), len(prev_chars))
+                    same_chars = overlap >= 0.5 or curr_chars.issubset(prev_chars) or prev_chars.issubset(curr_chars)
+                else:
+                    same_chars = (curr_chars == prev_chars)
+                
+                is_env_change = curr["beat_type"] in ["reveal", "combat"] or (curr["beat_type"] == "action" and curr["importance"] >= 8)
+                
+                if same_loc and same_chars and not is_env_change:
+                    curr["merge_with_previous"] = True
+                else:
+                    last_unmerged_idx = i
 
         return {"state": state, "panels": valid_panels}
