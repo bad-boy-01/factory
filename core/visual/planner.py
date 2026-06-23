@@ -154,6 +154,13 @@ class StoryboardPlanner:
                 if not desc:
                     continue  # skip empty descriptions
 
+                import re
+                internal_pattern = r"\b(realize|realizes|realization|remembers|remembered|memory|memories|thinks|thought|understands|understood|knows|learned|learns|transmigration|rebirth|past life|reflection|reflecting)\b"
+                if re.search(internal_pattern, desc.lower()):
+                    imp = min(imp, 4)
+                    if bt in ["action", "combat", "reveal", "environment", "object_focus", "transition"]:
+                        bt = "emotion"
+
                 merge = False
                 if imp <= 4:
                     merge = True
@@ -206,13 +213,18 @@ class StoryboardPlanner:
                 continue
                 
             same_loc = (curr["location"] == prev["location"])
-            same_chars = set(curr.get("characters", [])) == set(prev.get("characters", []))
             
-            # Only merge when: same location, same characters, no reveal, no combat, no major visible action, no new visual subject
-            if same_loc and same_chars and curr["beat_type"] not in ["reveal", "combat", "action", "object_focus"]:
-                if curr["importance"] <= prev["importance"]:
-                    curr["merge_with_previous"] = True
-                else:
-                    prev["merge_with_previous"] = True
+            curr_chars = set(curr.get("characters", []))
+            prev_chars = set(prev.get("characters", []))
+            if curr_chars and prev_chars:
+                overlap = len(curr_chars.intersection(prev_chars)) / max(len(curr_chars), len(prev_chars))
+                same_chars = overlap >= 0.5 or curr_chars.issubset(prev_chars) or prev_chars.issubset(curr_chars)
+            else:
+                same_chars = (curr_chars == prev_chars)
+            
+            is_env_change = curr["beat_type"] in ["reveal", "combat", "environment"] or (curr["beat_type"] == "action" and curr["importance"] >= 8)
+            
+            if same_loc and same_chars and not is_env_change:
+                curr["merge_with_previous"] = True
 
         return {"state": state, "panels": valid_panels}
