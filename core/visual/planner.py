@@ -38,23 +38,25 @@ class StoryboardPlanner:
             "Your primary goal is to tell the story using the FEWEST possible images while preserving clarity.\n"
             "Think in VISUAL STATE CHANGES, not narrative beats.\n"
             "Turn the provided narrative block into a JSON storyboard.\n\n"
+            "A major story realization does NOT automatically justify a new image.\n"
             "A new image is ONLY required when at least one of these changes:\n"
-            "1. Location changes\n"
-            "2. Time of day changes\n"
-            "3. Weather changes\n"
-            "4. A new important character appears\n"
-            "5. A major action changes the visual situation\n"
-            "6. A reveal gives the audience new visual information\n"
-            "7. A combat sequence begins or ends\n"
-            "8. The environment itself changes\n\n"
+            "1. location\n"
+            "2. character arrangement\n"
+            "3. physical action\n"
+            "4. visible object\n"
+            "5. visible threat\n"
+            "6. visual reveal\n"
+            "7. camera framing requirement\n\n"
             "Everything else should reuse an existing image.\n"
-            "The following MUST NOT automatically create new images:\n"
-            "- Internal thoughts, memories, realizations, explanations, backstory, emotional narration.\n"
+            "The following MUST NOT create standalone images:\n"
+            "- remembering, realizing, understanding, reflecting\n"
+            "- internal monologue, emotional narration, backstory explanation, transmigration realization\n"
             "- Family reactions, worried expressions (reuse the existing family image).\n"
             "- Flashbacks (unless they occupy a significant portion of the chapter).\n"
-            "- Thinking, looking around, talking, walking through the same location, waiting.\n\n"
-            "LOCATION RULE: Every panel MUST contain the fully resolved location name. Do NOT output 'same as previous'.\n\n"
-            "If the audience can understand the event through subtitles, narration, zooming, panning, or camera movement, DO NOT generate a new image.\n"
+            "These should be merged into the current image and represented through narration, subtitles, zooms, pans, and facial crops.\n\n"
+            "LOCATION RULE: Every panel MUST contain the fully resolved location name. Do NOT output 'same as previous'.\n"
+            "FOCUS CHARACTER RULE: focus_character must contain either null or a single character name. Never a comma-separated list.\n"
+            "NARRATION TEST: If a panel description can be narrated over the previous image without visual confusion, force merge_with_previous=true.\n\n"
             "Always ask: 'Can this event be understood using the previous image?'\n"
             "If YES: merge_with_previous = true\n"
             "If uncertain: merge_with_previous = true\n"
@@ -149,6 +151,12 @@ class StoryboardPlanner:
                 if not raw_loc or raw_loc.lower() in ["same", "same as previous", "current location", "unknown"]:
                     raw_loc = state.get("current_location", "")
 
+                fc_raw = str(p.get("focus_character", "")).strip()
+                if fc_raw.lower() in ["none", "null", ""]:
+                    fc = None
+                else:
+                    fc = fc_raw.split(",")[0].strip()
+
                 panel = {
                     "id": f"p{seq}",
                     "sequence": seq,
@@ -157,7 +165,7 @@ class StoryboardPlanner:
                     "importance": imp,
                     "merge_with_previous": merge,
                     "location": raw_loc,
-                    "focus_character": p.get("focus_character", None) if str(p.get("focus_character", "")).lower() not in ["none", "null", ""] else None,
+                    "focus_character": fc,
                     "characters": p.get("characters", []),
                     "description": desc,
                     "chapter": chapter
