@@ -615,14 +615,6 @@ class UnifiedPipeline:
 
         new_panels_added = False
         
-        # State object that carries over across chunks
-        planner_state = {
-            "current_location": "unknown",
-            "time_of_day": "unknown",
-            "weather": "unknown",
-            "active_characters": []
-        }
-
         def create_narrative_blocks(text, min_w=800, max_w=1200):
             paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
             blocks = []
@@ -647,6 +639,14 @@ class UnifiedPipeline:
             if self.pm.is_complete("visual_planning", sub_key=filename):
                 logger.info(f"  Visual planning for {filename} cached — skipping")
                 continue
+
+            # State object that carries over across chunks within the SAME chapter
+            planner_state = {
+                "current_location": "unknown",
+                "time_of_day": "unknown",
+                "weather": "unknown",
+                "active_characters": []
+            }
 
             file_path = os.path.join(self.pm.dirs["output"], filename)
             text = self.pm.read_input(file_path)

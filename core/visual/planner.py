@@ -68,6 +68,10 @@ class StoryboardPlanner:
             "A reveal must be visually observable. Valid: monster appears, hidden treasure found. Invalid: realizing something, learning information, discovering a fact mentally.\n\n"
             "OBJECT FOCUS RULE\n"
             "Object focus is reserved for important inanimate objects (sword, treasure, letter). Not valid: people, monsters, animals, facial expressions.\n\n"
+            "VISUAL DESCRIPTION RULE\n"
+            "Descriptions must only describe what can be seen by a camera.\n"
+            "Do not describe: memories, thoughts, realizations, understanding, exposition, narration.\n"
+            "Describe only visible subjects, actions, expressions, environments, and objects.\n\n"
             "IMAGE ECONOMY RULE\n"
             "One image should represent as much narrative as possible. (e.g. Character wakes up + family gathered + confusion = ONE image).\n\n"
             "FINAL QUESTION\n"
@@ -79,7 +83,8 @@ class StoryboardPlanner:
             "BEAT TYPES MUST BE USED CORRECTLY: environment, reveal, action, reaction, emotion, dialogue, transition, object_focus. Environment normally ONCE per location.\n"
             "IMPORTANCE SCALE (1-10):\n"
             "10=Life-changing, 9=Major reveal/combat, 8=Major action, 7=Important story progression, 6=Meaningful action, 5=Useful context, 4=Minor action, 3=Minor reaction, 2=Internal thought, 1=Tiny detail.\n"
-            "Realizations, memories, and internal narration MUST score 2-4 and merge_with_previous=true unless a visible change occurs.\n\n"
+            "Do NOT determine visual importance from beat_type. Determine visual importance from whether the audience receives new visual information.\n"
+            "A realization is not visual. A visible transformation is visual. A dialogue line is not visual. A king publicly announcing war is visual.\n\n"
             "NO MARKDOWN: Output ONLY valid JSON.\n\n"
             "JSON SCHEMA:\n"
             "{\n"
@@ -203,7 +208,8 @@ class StoryboardPlanner:
             same_loc = (curr["location"] == prev["location"])
             same_chars = set(curr.get("characters", [])) == set(prev.get("characters", []))
             
-            if same_loc and same_chars and curr["beat_type"] not in ["reveal", "combat"]:
+            # Only merge when: same location, same characters, no reveal, no combat, no major visible action, no new visual subject
+            if same_loc and same_chars and curr["beat_type"] not in ["reveal", "combat", "action", "object_focus"]:
                 if curr["importance"] <= prev["importance"]:
                     curr["merge_with_previous"] = True
                 else:

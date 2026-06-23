@@ -21,17 +21,10 @@ His brother Xu Dagui was already married; except for the absence of his sister-i
 In his previous life, he was an orphan and the woman he loved with all his heart had finally betrayed him. Since he could live again and feel family love, he thought the situation was not that bad."""
 
     state = {
-        "current_location": "riverbank",
-        "time_of_day": "sunset",
-        "weather": "clear",
-        "active_characters": ["Arthur"],
-        "character_states": {
-            "Arthur": {
-                "outfit": "leather tunic",
-                "emotion": "calm",
-                "position": "sitting"
-            }
-        }
+        "current_location": "unknown",
+        "time_of_day": "unknown",
+        "weather": "unknown",
+        "active_characters": []
     }
 
     print("Running planner with Groq/Ollama/DeepSeek/Gemini routing...")
