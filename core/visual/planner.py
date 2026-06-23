@@ -33,27 +33,36 @@ class StoryboardPlanner:
         Returns a dict containing 'state' and 'panels'.
         """
         system = (
-            "You are a cinematic storyboard director for a manga/manhwa adaptation.\n"
+            "YOU ARE NOT A STORYBOARD ARTIST.\n"
+            "YOU ARE AN IMAGE BUDGET DIRECTOR.\n"
+            "Your primary goal is to tell the story using the FEWEST possible images while preserving clarity.\n"
+            "Think in VISUAL STATE CHANGES, not narrative beats.\n"
             "Turn the provided narrative block into a JSON storyboard.\n\n"
-            "RULES:\n"
-            "1. EXTRACT VISUAL BEATS: Do NOT extract sentence-by-sentence. Combine related actions into a single beat (e.g. fishing, sitting, casting -> 1 action beat). Include internal thoughts as emotion beats.\n"
-            "2. MAINTAIN CONTINUITY: Use the Provided State. Update the State based on the text.\n"
-            "3. NO FLASHBACK VISUALS: Internal thoughts and memories must remain in the current scene's location. Do not create new locations or visual scenes for memories. Thoughts are emotional beats within the current location.\n"
-            "4. BEAT TYPES:\n"
-            "   - 'environment': Establishing shots, scenery.\n"
-            "   - 'emotion': Character thoughts, internal monologue, reactions.\n"
-            "   - 'reveal': Sudden interruptions, massive new elements bursting in.\n"
-            "   - 'object_focus': INANIMATE objects only (magic rings, weapons, floats). Animals/monsters are 'action' or 'reveal'.\n"
-            "   - 'action', 'combat', 'dialogue', 'transition', 'reaction'.\n"
-            "5. FOCUS CHARACTER: Must be null OR a character from the active_characters list. Never use an unknown entity like 'Huge Fish'. If none, output null.\n"
-            "6. IMPORTANCE: Rate each panel 1-10. \n"
-            "   - 9-10: Reveals, combat, plot twists, life-changing moments, major entrances.\n"
-            "   - 7-8: Major actions, key discoveries, strong emotional moments.\n"
-            "   - 5-6: Meaningful actions, location changes, important dialogue.\n"
-            "   - 3-4: Setup actions, small observations, minor suspense.\n"
-            "   - 1-2: Tiny reactions, minor dialogue, small emotional shifts, internal wondering.\n"
-            "7. DESCRIPTION: Write a dense, visually descriptive prompt.\n"
-            "8. NO MARKDOWN: Output ONLY valid JSON.\n\n"
+            "A new image is ONLY required when at least one of these changes:\n"
+            "1. Location changes\n"
+            "2. Time of day changes\n"
+            "3. Weather changes\n"
+            "4. A new important character appears\n"
+            "5. A major action changes the visual situation\n"
+            "6. A reveal gives the audience new visual information\n"
+            "7. A combat sequence begins or ends\n"
+            "8. The environment itself changes\n\n"
+            "Everything else should reuse an existing image.\n"
+            "The following DO NOT require new images:\n"
+            "- Thinking, Remembering, Internal monologue, Minor emotions, Small reactions,\n"
+            "- Looking around, Talking, Walking through the same location, Waiting,\n"
+            "- Observing, Planning, Wondering, Brief flashbacks.\n\n"
+            "If the audience can understand the event through subtitles, narration, zooming, panning, or camera movement, DO NOT generate a new image.\n"
+            "Always ask: 'Can this event be understood using the previous image?'\n"
+            "If YES: merge_with_previous = true\n"
+            "If uncertain: merge_with_previous = true\n"
+            "Your default answer should always be MERGE.\n\n"
+            "IMPORTANCE SCALE (1-10):\n"
+            "   10 = Life-changing event, 9 = Major reveal/combat, 8 = Major action, 7 = Important story progression,\n"
+            "   6 = Meaningful action, 5 = Useful visual context, 4 = Minor action, 3 = Minor reaction,\n"
+            "   2 = Internal thought, 1 = Tiny detail.\n"
+            "MAINTAIN CONTINUITY: Use the Provided State. Update the State based on the text.\n"
+            "NO MARKDOWN: Output ONLY valid JSON.\n\n"
             "JSON SCHEMA:\n"
             "{\n"
             '  "state": {\n'
@@ -122,13 +131,25 @@ class StoryboardPlanner:
                 if not desc:
                     continue  # skip empty descriptions
 
+                merge = False
+                if imp <= 4:
+                    merge = True
+                elif bt == "transition":
+                    merge = True
+                elif bt == "dialogue" and imp < 7:
+                    merge = True
+                elif bt == "reaction" and imp < 7:
+                    merge = True
+                elif bt == "emotion" and imp < 8:
+                    merge = True
+
                 panel = {
                     "id": f"p{seq}",
                     "sequence": seq,
                     "beat_type": bt,
                     "shot_type": st,
                     "importance": imp,
-                    "merge_with_previous": True if (bt in ["emotion", "reaction"] and imp <= 4) or (bt in ["dialogue", "transition"] and imp <= 3) else False,
+                    "merge_with_previous": merge,
                     "location": str(p.get("location", state.get("current_location", ""))),
                     "focus_character": p.get("focus_character", None) if str(p.get("focus_character", "")).lower() not in ["none", "null", ""] else None,
                     "characters": p.get("characters", []),

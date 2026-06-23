@@ -673,30 +673,34 @@ class UnifiedPipeline:
                         continue
 
                     # IMAGE BUDGET ENFORCEMENT
-                    target_images = self.config.config.get("storyboard", {}).get("target_images_per_1000_words", 7)
+                    target_images = self.config.config.get("storyboard", {}).get("target_images_per_1000_words", 6)
                     chunk_words = len(chunk_text.split())
                     budget = max(1, round((chunk_words / 1000) * target_images))
                     
                     unmerged_panels = [p for p in panels if not p.get("merge_with_previous", False)]
                     
                     if len(unmerged_panels) > budget:
-                        beat_weight = {
-                            "reveal": 5, "combat": 4, "action": 3, "emotion": 2, 
-                            "dialogue": 1, "reaction": 1, "object_focus": 2, 
-                            "environment": 2, "transition": 0
-                        }
-                        
                         scored_panels = []
                         for p in unmerged_panels:
                             bt = p.get("beat_type", "action")
                             imp = p.get("importance", 5)
-                            effective_score = imp + beat_weight.get(bt, 1)
                             
-                            is_protected = (bt in ["reveal", "combat"]) or (imp >= 9)
+                            is_protected = (bt in ["reveal", "combat"]) or (imp >= 8)
+                            
+                            # Lower score = dropped/merged first
+                            score = imp
+                            if imp <= 4: score -= 20
+                            elif bt == "transition": score -= 15
+                            elif bt == "reaction": score -= 10
+                            elif bt == "emotion": score -= 8
+                            elif bt == "dialogue": score -= 5
+                            elif bt == "environment": score += 1
+                            elif bt == "action": score += 2
+                            elif bt == "object_focus": score += 2
                             
                             scored_panels.append({
                                 "panel": p,
-                                "score": effective_score,
+                                "score": score,
                                 "protected": is_protected
                             })
                             
@@ -711,7 +715,7 @@ class UnifiedPipeline:
                             if not sp["protected"]:
                                 sp["panel"]["merge_with_previous"] = True
                                 merged_count += 1
-                                logger.info(f"    - Over budget: Merging {sp['panel']['id']} ({sp['panel']['beat_type']}, score {sp['score']})")
+                                logger.info(f"    - Over budget: Merging {sp['panel']['id']} ({sp['panel']['beat_type']}, imp {sp['panel'].get('importance', 5)}, score {sp['score']})")
 
                     # Generate prompts for the panels
                     for p in panels:
