@@ -48,10 +48,12 @@ class StoryboardPlanner:
             "7. A combat sequence begins or ends\n"
             "8. The environment itself changes\n\n"
             "Everything else should reuse an existing image.\n"
-            "The following DO NOT require new images:\n"
-            "- Thinking, Remembering, Internal monologue, Minor emotions, Small reactions,\n"
-            "- Looking around, Talking, Walking through the same location, Waiting,\n"
-            "- Observing, Planning, Wondering, Brief flashbacks.\n\n"
+            "The following MUST NOT automatically create new images:\n"
+            "- Internal thoughts, memories, realizations, explanations, backstory, emotional narration.\n"
+            "- Family reactions, worried expressions (reuse the existing family image).\n"
+            "- Flashbacks (unless they occupy a significant portion of the chapter).\n"
+            "- Thinking, looking around, talking, walking through the same location, waiting.\n\n"
+            "LOCATION RULE: Every panel MUST contain the fully resolved location name. Do NOT output 'same as previous'.\n\n"
             "If the audience can understand the event through subtitles, narration, zooming, panning, or camera movement, DO NOT generate a new image.\n"
             "Always ask: 'Can this event be understood using the previous image?'\n"
             "If YES: merge_with_previous = true\n"
@@ -143,6 +145,10 @@ class StoryboardPlanner:
                 elif bt == "emotion" and imp < 8:
                     merge = True
 
+                raw_loc = str(p.get("location", ""))
+                if not raw_loc or raw_loc.lower() in ["same", "same as previous", "current location", "unknown"]:
+                    raw_loc = state.get("current_location", "")
+
                 panel = {
                     "id": f"p{seq}",
                     "sequence": seq,
@@ -150,7 +156,7 @@ class StoryboardPlanner:
                     "shot_type": st,
                     "importance": imp,
                     "merge_with_previous": merge,
-                    "location": str(p.get("location", state.get("current_location", ""))),
+                    "location": raw_loc,
                     "focus_character": p.get("focus_character", None) if str(p.get("focus_character", "")).lower() not in ["none", "null", ""] else None,
                     "characters": p.get("characters", []),
                     "description": desc,
@@ -163,5 +169,22 @@ class StoryboardPlanner:
             except Exception as e:
                 logger.warning(f"Failed to validate panel {p}: {e}")
                 continue
+
+        # Post-processing pass: merge consecutive panels with same location and characters
+        for i in range(1, len(valid_panels)):
+            prev = valid_panels[i-1]
+            curr = valid_panels[i]
+            
+            if curr["merge_with_previous"]:
+                continue
+                
+            same_loc = (curr["location"] == prev["location"])
+            same_chars = set(curr.get("characters", [])) == set(prev.get("characters", []))
+            
+            if same_loc and same_chars and curr["beat_type"] not in ["reveal", "combat"]:
+                if curr["importance"] <= prev["importance"]:
+                    curr["merge_with_previous"] = True
+                else:
+                    prev["merge_with_previous"] = True
 
         return {"state": state, "panels": valid_panels}
